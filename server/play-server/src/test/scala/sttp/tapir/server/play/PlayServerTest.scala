@@ -3,22 +3,31 @@ package sttp.tapir.server.play
 import akka.actor.ActorSystem
 import akka.stream.scaladsl.{Flow, Sink, Source}
 import cats.data.NonEmptyList
-import cats.effect.{IO, Resource}
 import cats.effect.unsafe.implicits.global
+import cats.effect.{IO, Resource}
+import enumeratum.EnumEntry.Lowercase
+import enumeratum._
 import org.scalatest.matchers.should.Matchers._
-import play.api.http.HttpVerbs.GET
 import play.api.http.ParserConfiguration
-import play.api.mvc.Result
 import sttp.capabilities.akka.AkkaStreams
 import sttp.client3._
 import sttp.model.{MediaType, Part, StatusCode}
 import sttp.monad.FutureMonad
 import sttp.tapir._
+import sttp.tapir.codec.enumeratum._
 import sttp.tapir.server.tests._
 import sttp.tapir.tests.{Test, TestSuite}
 
 import scala.concurrent.Future
 
+sealed trait Animal extends EnumEntry with Lowercase
+
+object Animal extends Enum[Animal] {
+  case object Dog extends Animal
+  case object Cat extends Animal
+
+  override def values: IndexedSeq[Animal] = findValues
+}
 class PlayServerTest extends TestSuite {
 
   def actorSystemResource: Resource[IO, ActorSystem] =
@@ -68,6 +77,41 @@ class PlayServerTest extends TestSuite {
                 .handleErrorWith {
                   case _: SttpClientException.ReadException => IO.pure(succeed)
                   case e                                    => IO.raiseError(e)
+                }
+            }
+            .unsafeToFuture()
+        },
+        // https://github.com/softwaremill/tapir/issues/2811
+        Test("not return 4xx on path decoding failure before trying other paths") {
+          // given
+          val endpoints = List(
+            endpoint.get
+              .in("animal")
+              .in(path[Animal]("animal"))
+              .out(stringBody)
+              .serverLogicSuccess[Future] {
+                case Animal.Dog => Future.successful("This is a dog")
+                case Animal.Cat => Future.successful("This is a cat")
+              },
+            endpoint.post
+              .in("animal")
+              .in("bird")
+              .out(stringBody)
+              .serverLogicSuccess[Future] { _ =>
+                Future.successful("This is a bird")
+              }
+          )
+          val serverResource = interpreter.server(NonEmptyList.of(PlayServerInterpreter().toRoutes(endpoints)))
+
+          // when
+          serverResource
+            .use { port =>
+              basicRequest
+                .post(uri"http://localhost:$port/animal/bird")
+                .send(backend)
+                .map { response =>
+                  response.code shouldBe StatusCode.Ok
+                  response.body shouldBe Right("This is a bird")
                 }
             }
             .unsafeToFuture()

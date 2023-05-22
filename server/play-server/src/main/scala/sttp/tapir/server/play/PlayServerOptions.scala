@@ -4,10 +4,10 @@ import akka.stream.Materializer
 import play.api.Logger
 import play.api.libs.Files.{SingletonTemporaryFileCreator, TemporaryFileCreator}
 import play.api.mvc._
-import sttp.tapir.{Defaults, TapirFile}
-import sttp.tapir.server.interceptor.decodefailure.DecodeFailureHandler
+import sttp.tapir.server.interceptor.decodefailure.{DecodeFailureHandler, DefaultDecodeFailureHandler}
 import sttp.tapir.server.interceptor.log.DefaultServerLog
 import sttp.tapir.server.interceptor.{CustomiseInterceptors, Interceptor}
+import sttp.tapir.{Defaults, TapirFile}
 
 import scala.concurrent.{ExecutionContext, Future, blocking}
 
@@ -63,7 +63,17 @@ object PlayServerOptions {
     }
   }
 
-  def default(implicit mat: Materializer, ec: ExecutionContext): PlayServerOptions = customiseInterceptors.options
+  def default(implicit mat: Materializer, ec: ExecutionContext): PlayServerOptions = {
+    val decodeFailureHandler: DecodeFailureHandler =
+      DefaultDecodeFailureHandler.default.copy(
+        respond = DefaultDecodeFailureHandler.respond(
+          _,
+          badRequestOnPathErrorIfPathShapeMatches = false,
+          badRequestOnPathInvalidIfPathShapeMatches = false
+        )
+      )
+    customiseInterceptors.copy(decodeFailureHandler = decodeFailureHandler).options
+  }
 
   lazy val logger: Logger = Logger(this.getClass.getPackage.getName)
 }
