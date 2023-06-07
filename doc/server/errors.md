@@ -54,8 +54,8 @@ value of type `ErrorInfo`.
 Following the convention, the left side of the `Either[ErrorInfo, T]` represents an error, and the right side success.
 
 Alternatively, errors can be recovered from failed effects and mapped to the error output - provided that the `E` type
-in the endpoint description is itself a subclass of exception. This can be done using the `toRouteRecoverErrors` method
-(or similar for other interpreters).
+in the endpoint description is itself a subclass of exception. This can be done with `.serverLogicRecoverErrors`, see 
+[Recovering errors from failed effects](server/logic.html#recovering-errors-from-failed-effects) for more useful combinators.
 
 ## Failed effects: unhandled exceptions
 
